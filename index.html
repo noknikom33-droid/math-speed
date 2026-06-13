@@ -1,0 +1,941 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Speed - วิ่งแตะซ้ายขวา (1-2 คน)</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <!-- MediaPipe Pose -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400;600;800;900&display=swap');
+
+        body {
+            font-family: 'Kanit', sans-serif;
+            background-color: #1e3a8a;
+            background-image: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+            overflow: hidden;
+            touch-action: none;
+        }
+
+        .bounce-anim { animation: bounce 1s infinite alternate; }
+        @keyframes bounce {
+            from { transform: translateY(0px) scale(1); }
+            to { transform: translateY(-10px) scale(1.05); }
+        }
+
+        .flash-green { animation: flashGreen 0.5s; }
+        .flash-red { animation: flashRed 0.5s; }
+        @keyframes flashGreen {
+            0% { box-shadow: inset 0 0 0 50px rgba(72, 187, 120, 0.6); }
+            100% { box-shadow: inset 0 0 0 0 rgba(72, 187, 120, 0); }
+        }
+        @keyframes flashRed {
+            0% { box-shadow: inset 0 0 0 50px rgba(245, 101, 101, 0.6); }
+            100% { box-shadow: inset 0 0 0 0 rgba(245, 101, 101, 0); }
+        }
+
+        .video-container {
+            position: relative;
+            width: 100vw; height: 100vh;
+            display: flex; justify-content: center; align-items: center;
+            background: #000;
+        }
+        video, canvas.output_canvas {
+            position: absolute;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Mirror effect */
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 4px solid #fff;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .text-stroke {
+            text-shadow: -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 2px 2px 0 #fff, 0 4px 10px rgba(0,0,0,0.4);
+        }
+
+        /* ===== วงกลมคำตอบ ===== */
+        .answer-circle {
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 900; color: #1f2937;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3), inset 0 0 20px rgba(255,255,255,0.8);
+            border: 6px solid #fff;
+            transition: transform 0.15s, background-color 0.15s;
+            position: absolute; bottom: 9%; z-index: 40;
+        }
+
+        /* ---- โหมด 1 คน : วงใหญ่ ซ้าย/ขวาเต็มจอ ---- */
+        body.mode-1p .answer-circle {
+            width: 18vw; height: 18vw; max-width: 170px; max-height: 170px; font-size: 4rem;
+        }
+        body.mode-1p #p1LeftBox  { left: 10%;  border-color: #f97316; color: #c2410c; }
+        body.mode-1p #p1RightBox { right: 10%; border-color: #8b5cf6; color: #5b21b6; }
+        body.mode-1p #p2LeftBox, body.mode-1p #p2RightBox { display: none; }
+
+        /* ---- โหมด 2 คน : วงเล็กลง แบ่งครึ่งจอ ---- */
+        body.mode-2p .answer-circle {
+            width: 13vw; height: 13vw; max-width: 130px; max-height: 130px; font-size: 2.6rem;
+        }
+        /* ผู้เล่น 1 = ครึ่งซ้ายจอ (โทนส้ม) */
+        body.mode-2p #p1LeftBox  { left: 4%;  border-color: #f97316; color: #c2410c; }
+        body.mode-2p #p1RightBox { left: 28%; border-color: #f97316; color: #c2410c; }
+        /* ผู้เล่น 2 = ครึ่งขวาจอ (โทนม่วง) */
+        body.mode-2p #p2LeftBox  { right: 28%; border-color: #8b5cf6; color: #5b21b6; }
+        body.mode-2p #p2RightBox { right: 4%;  border-color: #8b5cf6; color: #5b21b6; }
+
+        .answer-circle.hit { transform: scale(1.18); background-color: #fff; }
+
+        /* ===== แผงโจทย์ ===== */
+        .cmd-panel { background: rgba(255,255,255,0.95); backdrop-filter: blur(10px); border: 4px solid #fff; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+
+        /* โหมด 1 คน : โจทย์กลางจอ */
+        body.mode-1p #p1CmdWrap { position:absolute; top:7%; left:50%; transform:translateX(-50%); width:80%; max-width:760px; text-align:center; z-index:20; }
+        body.mode-1p #p2CmdWrap { display:none; }
+        body.mode-1p .cmd-text { font-size: 4.2rem; }
+
+        /* โหมด 2 คน : โจทย์ฝั่งใครฝั่งมัน */
+        body.mode-2p #p1CmdWrap { position:absolute; top:13%; left:24%; transform:translateX(-50%); width:42%; max-width:420px; text-align:center; z-index:20; }
+        body.mode-2p #p2CmdWrap { position:absolute; top:13%; left:76%; transform:translateX(-50%); width:42%; max-width:420px; text-align:center; z-index:20; }
+        body.mode-2p .cmd-text { font-size: 2.6rem; }
+
+        /* ===== HUD คะแนน/เวลา ===== */
+        body.mode-1p #timeBox  { position:absolute; top:1rem; right:1rem; }
+        body.mode-1p #p1Hud    { position:absolute; top:1rem; left:1rem; }
+        body.mode-1p #p2Hud, body.mode-1p #tugWrap { display:none; }
+
+        body.mode-2p #timeBox  { position:absolute; top:1rem; left:50%; transform:translateX(-50%); text-align:center; }
+        body.mode-2p #p1Hud    { position:absolute; top:1rem; left:1rem; }
+        body.mode-2p #p2Hud    { position:absolute; top:1rem; right:1rem; text-align:right; }
+
+        /* แถบชักเย่อ (เฉพาะ 2 คน) */
+        body.mode-1p #tugWrap { display:none; }
+        body.mode-2p #tugWrap {
+            position:absolute; top:6.5rem; left:50%; transform:translateX(-50%);
+            width:55vw; max-width:560px; z-index:20;
+        }
+        .tug-track {
+            position:relative; height:26px; border-radius:999px; overflow:hidden;
+            background: linear-gradient(90deg, #fb923c 0%, #fb923c 50%, #a78bfa 50%, #a78bfa 100%);
+            border:3px solid #fff; box-shadow:0 6px 16px rgba(0,0,0,0.3);
+        }
+        #tugKnot {
+            position:absolute; top:50%; left:50%;
+            transform:translate(-50%,-50%);
+            width:30px; height:30px; border-radius:50%;
+            background:#fff; border:4px solid #1f2937;
+            box-shadow:0 3px 8px rgba(0,0,0,0.4);
+            transition:left 0.4s ease;
+            display:flex; align-items:center; justify-content:center; font-size:14px;
+        }
+
+        .streak-chip {
+            display:inline-block; margin-top:2px; font-weight:900;
+            color:#b45309; background:#fde68a; border-radius:999px;
+            padding:1px 10px; font-size:0.95rem; opacity:0; transition:opacity .2s, transform .2s;
+        }
+        .streak-chip.on { opacity:1; }
+    </style>
+</head>
+<body class="text-gray-800 h-screen w-screen flex flex-col relative mode-1p">
+
+    <script>
+        // ===== เสียงพูดไทย + เสียงบี๊บ =====
+        const speak = (text) => {
+            if('speechSynthesis' in window) {
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'th-TH'; u.rate = 1.3;
+                speechSynthesis.speak(u);
+            }
+        };
+        const beep = (freq, type, duration) => {
+            try {
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = ctx.createOscillator();
+                osc.type = type; osc.frequency.value = freq;
+                osc.connect(ctx.destination); osc.start();
+                setTimeout(() => osc.stop(), duration);
+            } catch(e){}
+        };
+    </script>
+
+    <!-- 1. เมนูหลัก -->
+    <div id="menuScreen" class="absolute inset-0 z-50 flex flex-col items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-blue-600 bg-blend-multiply overflow-y-auto py-6">
+        <div class="glass-panel rounded-3xl p-8 max-w-2xl w-full text-center m-4">
+            <h1 class="text-6xl font-black mb-1 bounce-anim text-stroke" style="color:#ed8936;">MATH SPEED</h1>
+            <h2 class="text-3xl font-black text-green-500 mb-5 text-stroke">วิ่งแตะซ้าย-ขวา ป.5</h2>
+
+            <!-- จำนวนผู้เล่น -->
+            <div class="flex gap-3 mb-5">
+                <button id="btn1p" onclick="setPlayers(1)" class="flex-1 text-2xl font-black py-4 rounded-2xl border-4 transition bg-green-500 text-white border-green-700 shadow-[0_6px_0_#166534]">
+                    🧍 เล่น 1 คน
+                </button>
+                <button id="btn2p" onclick="setPlayers(2)" class="flex-1 text-2xl font-black py-4 rounded-2xl border-4 transition bg-gray-100 text-gray-500 border-gray-300">
+                    🧍🧍 แข่ง 2 คน
+                </button>
+            </div>
+
+            <div class="bg-gray-100 p-5 rounded-2xl mb-6 space-y-4 shadow-inner text-left">
+                <div class="flex flex-col gap-1">
+                    <label class="font-bold text-lg text-gray-700">🎥 กล้องที่ใช้งาน:</label>
+                    <select id="cameraSelect" onchange="changeCamera()" class="border-2 border-blue-300 rounded-xl p-3 text-lg font-bold text-blue-800 focus:outline-none focus:border-blue-500 truncate">
+                        <option value="">กำลังโหลดรายชื่อกล้อง...</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="font-bold text-lg text-gray-700">หมวดหมู่คณิตศาสตร์:</label>
+                    <select id="gameModeSelect" class="border-2 border-blue-300 rounded-xl p-3 text-lg font-bold text-blue-800 focus:outline-none focus:border-blue-500">
+                        <option value="mixed">🔥 รวมทุกโจทย์ (ท้าทายสุดๆ)</option>
+                        <option value="basic">➕ บวก ลบ คูณ หาร (พื้นฐาน)</option>
+                        <option value="decimal_fraction">🔢 ทศนิยม และ เศษส่วน</option>
+                        <option value="equation_pemdas">✖️ สมการ และ ลำดับคำนวณ</option>
+                    </select>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <label class="font-bold text-lg text-gray-700">เวลาการแข่งขัน:</label>
+                    <select id="timeSelect" class="border-2 border-blue-300 rounded-xl p-3 text-lg font-bold text-red-600 focus:outline-none">
+                        <option value="30">30 วินาที</option>
+                        <option value="60" selected>60 วินาที</option>
+                        <option value="90">90 วินาที</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="space-y-3">
+                <button onclick="startGame()" class="w-full bg-green-500 hover:bg-green-600 text-white text-3xl font-black py-5 px-8 rounded-full shadow-[0_10px_0_#166534] transform transition hover:translate-y-1 active:translate-y-2 active:shadow-none">
+                    🏃‍♂️ เริ่มเกมเลย!
+                </button>
+                <button onclick="showLeaderboard()" class="w-full bg-yellow-400 hover:bg-yellow-500 text-yellow-900 text-xl font-bold py-3 px-4 rounded-xl shadow transition flex justify-center items-center gap-2">
+                    🏆 ตารางคะแนน
+                </button>
+            </div>
+            <p class="text-xs text-gray-400 mt-4">เคล็ดลับ: โหมด 2 คน ให้ยืนแยกซ้าย-ขวาคนละครึ่งจอ แล้ววิ่งแตะคำตอบฝั่งของตัวเอง</p>
+        </div>
+    </div>
+
+    <!-- 2. หน้าจอเกม -->
+    <div id="gameScreen" class="absolute inset-0 z-30 hidden">
+        <div class="video-container" id="gameArea">
+            <video id="gameVideo" autoplay muted playsinline></video>
+            <canvas id="gameCanvas" class="output_canvas pointer-events-none z-10"></canvas>
+
+            <!-- เวลา (กลาง/ขวาแล้วแต่โหมด) -->
+            <div id="timeBox" class="glass-panel px-6 py-2 rounded-2xl z-20 text-center">
+                <p class="text-sm font-bold text-gray-500">เวลา</p>
+                <p class="text-5xl font-black text-red-500" id="timeDisplay">60</p>
+            </div>
+
+            <!-- แถบชักเย่อ -->
+            <div id="tugWrap">
+                <div class="tug-track"><div id="tugKnot">⚡</div></div>
+                <div class="flex justify-between text-sm font-black mt-1 text-stroke">
+                    <span style="color:#fb923c;">ผู้เล่น 1</span>
+                    <span style="color:#a78bfa;">ผู้เล่น 2</span>
+                </div>
+            </div>
+
+            <!-- HUD ผู้เล่น 1 -->
+            <div id="p1Hud" class="glass-panel px-5 py-2 rounded-2xl z-20">
+                <p class="text-sm font-bold" style="color:#c2410c;">ผู้เล่น 1</p>
+                <p class="text-4xl font-black text-blue-600 leading-none" id="p1Score">0</p>
+                <span class="streak-chip" id="p1Streak">🔥 x2</span>
+            </div>
+
+            <!-- HUD ผู้เล่น 2 -->
+            <div id="p2Hud" class="glass-panel px-5 py-2 rounded-2xl z-20">
+                <p class="text-sm font-bold" style="color:#5b21b6;">ผู้เล่น 2</p>
+                <p class="text-4xl font-black text-blue-600 leading-none" id="p2Score">0</p>
+                <span class="streak-chip" id="p2Streak">🔥 x2</span>
+            </div>
+
+            <!-- โบนัส double points -->
+            <div id="bonusAlert" class="hidden absolute top-1 left-1/2 -translate-x-1/2 text-2xl font-black text-yellow-300 text-stroke bounce-anim z-30">⭐ DOUBLE POINTS! ⭐</div>
+
+            <!-- โจทย์ผู้เล่น 1 -->
+            <div id="p1CmdWrap">
+                <div class="cmd-panel inline-block px-8 py-4 rounded-3xl w-full">
+                    <p class="text-lg font-bold text-blue-500 mb-1">หาคำตอบ:</p>
+                    <p class="cmd-text font-black text-stroke text-gray-800 leading-tight" id="p1Command">...</p>
+                </div>
+            </div>
+
+            <!-- โจทย์ผู้เล่น 2 -->
+            <div id="p2CmdWrap">
+                <div class="cmd-panel inline-block px-8 py-4 rounded-3xl w-full">
+                    <p class="text-lg font-bold text-purple-500 mb-1">หาคำตอบ:</p>
+                    <p class="cmd-text font-black text-stroke text-gray-800 leading-tight" id="p2Command">...</p>
+                </div>
+            </div>
+
+            <!-- วงคำตอบ -->
+            <div id="p1LeftBox"  class="answer-circle">A</div>
+            <div id="p1RightBox" class="answer-circle">B</div>
+            <div id="p2LeftBox"  class="answer-circle">A</div>
+            <div id="p2RightBox" class="answer-circle">B</div>
+
+            <!-- ปุ่มออก -->
+            <button onclick="quitToMenu()" class="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 bg-black/50 hover:bg-black/70 text-white text-sm font-bold py-2 px-5 rounded-full">⏹ ออกจากเกม</button>
+
+            <!-- โหลด AI -->
+            <div id="aiLoading" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50 text-white">
+                <div class="animate-spin rounded-full h-32 w-32 border-b-8 border-t-8 border-blue-500 mb-6"></div>
+                <h2 class="text-4xl font-black mb-2 text-stroke text-blue-400">กำลังโหลดระบบ AI...</h2>
+                <p class="text-xl font-bold text-center px-4" id="loadingHint">กรุณายืนให้เต็มตัวหน้ากล้อง เตรียมวิ่งซ้ายขวา!</p>
+            </div>
+
+            <!-- นับถอยหลัง -->
+            <div id="countdownOverlay" class="hidden absolute inset-0 bg-black/60 flex items-center justify-center z-50">
+                <p id="countdownNum" class="text-[14rem] font-black text-yellow-300 text-stroke bounce-anim leading-none">3</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. ตารางคะแนน -->
+    <div id="leaderboardScreen" class="absolute inset-0 z-50 hidden bg-white flex flex-col items-center py-10 overflow-y-auto">
+        <h2 class="text-5xl font-black text-yellow-500 mb-8 text-stroke">🏆 TOP 10 🏆</h2>
+        <div class="w-full max-w-2xl bg-gray-100 rounded-3xl p-6 shadow-inner">
+            <table class="w-full text-left text-xl">
+                <thead>
+                    <tr class="border-b-2 border-gray-300 text-gray-500">
+                        <th class="py-2">อันดับ</th><th>ชื่อนักเรียน</th><th>คะแนน</th><th>วันที่</th>
+                    </tr>
+                </thead>
+                <tbody id="leaderboardBody"></tbody>
+            </table>
+        </div>
+        <button onclick="closeLeaderboard()" class="mt-8 bg-red-500 hover:bg-red-600 text-white text-2xl font-bold py-3 px-10 rounded-full shadow">กลับเมนูหลัก</button>
+    </div>
+
+    <!-- ===================== LOGIC ===================== -->
+    <script>
+        // ===== สถานะเกม =====
+        let numPlayers = 1;        // 1 หรือ 2
+        let modeKey = '1p';        // '1p' | '2p'
+        let gameMode = 'mixed';
+        let timeLeft = 60;
+        let totalPlayTime = 60;
+        let timerInterval = null;
+
+        let isPlaying = false;     // กล้อง+pose ทำงานอยู่
+        let gameStarted = false;   // เริ่มจับเวลา/นับคะแนนแล้ว
+        let firstPoseReady = false;
+
+        let isBonusRound = false;
+        let scoreMultiplier = 1;   // ตัวคูณช่วงโบนัส (ใช้ร่วม)
+
+        // ข้อมูลแยกรายผู้เล่น
+        const players = {
+            1: makePlayer(1),
+            2: makePlayer(2)
+        };
+        function makePlayer(id){
+            return {
+                id, score:0, streak:0, touches:0,
+                correctSide:'left', currentAns:0, lastHit:0, qStartTime:0,
+                crop:'full',
+                cmdId:  id===1 ? 'p1Command' : 'p2Command',
+                leftId: id===1 ? 'p1LeftBox' : 'p2LeftBox',
+                rightId:id===1 ? 'p1RightBox': 'p2RightBox',
+                scoreId:id===1 ? 'p1Score'   : 'p2Score',
+                streakId:id===1? 'p1Streak'  : 'p2Streak'
+            };
+        }
+        let activePlayers = [1];
+
+        // ===== กล้อง + MediaPipe =====
+        const gameVideo  = document.getElementById('gameVideo');
+        const gameCanvas = document.getElementById('gameCanvas');
+        const gameCtx    = gameCanvas.getContext('2d');
+
+        let stream = null;
+        let cameraLoopId = null;
+        let currentDeviceId = null;
+        let videoDevices = [];
+
+        // pose1 = โหมด 1 คน (เต็มเฟรม)
+        // poseB = ครึ่งขวาเฟรมดิบ -> ผู้เล่น 1 (เพราะ mirror จะไปอยู่ซ้ายจอ)
+        // poseA = ครึ่งซ้ายเฟรมดิบ -> ผู้เล่น 2 (ไปอยู่ขวาจอ)
+        let pose1 = null, poseA = null, poseB = null;
+
+        // canvas สำหรับตัดครึ่งเฟรม (โหมด 2 คน)
+        const leftCrop  = document.createElement('canvas');
+        const rightCrop = document.createElement('canvas');
+        const leftCtx   = leftCrop.getContext('2d');
+        const rightCtx  = rightCrop.getContext('2d');
+
+        window.onload = initCameraList;
+
+        // ===== เลือกจำนวนผู้เล่น =====
+        function setPlayers(n){
+            numPlayers = n;
+            const b1 = document.getElementById('btn1p');
+            const b2 = document.getElementById('btn2p');
+            const on  = 'bg-green-500 text-white border-green-700 shadow-[0_6px_0_#166534]';
+            const off = 'bg-gray-100 text-gray-500 border-gray-300';
+            if(n===1){ b1.className = b1.className.replace(off,'') ; b1.classList.add(...on.split(' ')); b2.classList.remove(...on.split(' ')); b2.classList.add(...off.split(' ')); }
+            else     { b2.classList.add(...on.split(' ')); b2.classList.remove(...off.split(' ')); b1.classList.remove(...on.split(' ')); b1.classList.add(...off.split(' ')); }
+        }
+
+        // ===== รายชื่อกล้อง =====
+        async function initCameraList() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ video:true, audio:false })
+                    .then(s => s.getTracks().forEach(t => t.stop()))
+                    .catch(err => console.log("camera wait:", err));
+
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                videoDevices = devices.filter(d => d.kind === 'videoinput');
+                const sel = document.getElementById('cameraSelect');
+                if(sel) sel.innerHTML = '';
+                if(videoDevices.length){
+                    videoDevices.forEach((d,i) => {
+                        const o = document.createElement('option');
+                        o.value = d.deviceId; o.text = d.label || `กล้อง ${i+1}`;
+                        sel && sel.appendChild(o);
+                    });
+                    currentDeviceId = videoDevices[0].deviceId;
+                } else if(sel){
+                    sel.innerHTML = '<option value="">ไม่พบกล้องในระบบ</option>';
+                }
+            } catch(err){ console.error("init camera:", err); }
+        }
+        function changeCamera(){
+            const sel = document.getElementById('cameraSelect');
+            if(sel) currentDeviceId = sel.value;
+        }
+
+        // ===== เปิดกล้อง =====
+        async function startNativeCamera(videoElement, onFrame){
+            if(stream) stream.getTracks().forEach(t => t.stop());
+            if(cameraLoopId) cancelAnimationFrame(cameraLoopId);
+            try {
+                let constraints = { video:{ facingMode:'user', width:{ideal:1280}, height:{ideal:720} }, audio:false };
+                if(currentDeviceId) constraints.video = { deviceId:{exact:currentDeviceId}, width:{ideal:1280}, height:{ideal:720} };
+                try { stream = await navigator.mediaDevices.getUserMedia(constraints); }
+                catch(err){
+                    if(err.name === 'OverconstrainedError' && currentDeviceId){
+                        constraints.video = { deviceId:currentDeviceId, width:{ideal:1280}, height:{ideal:720} };
+                        stream = await navigator.mediaDevices.getUserMedia(constraints);
+                    } else throw err;
+                }
+                videoElement.srcObject = stream;
+                return new Promise((resolve) => {
+                    videoElement.onloadedmetadata = () => {
+                        videoElement.play();
+                        const loop = async () => {
+                            if(videoElement.readyState >= 2) await onFrame();
+                            cameraLoopId = requestAnimationFrame(loop);
+                        };
+                        cameraLoopId = requestAnimationFrame(loop);
+                        resolve(true);
+                    };
+                });
+            } catch(err){
+                Swal.fire({ icon:'error', title:'กล้องมีปัญหา', text:'กรุณาอนุญาตการเข้าถึงกล้อง' });
+                return false;
+            }
+        }
+
+        // ===== สร้าง Pose ตามโหมด =====
+        function buildPose(complexity, handler){
+            const p = new Pose({ locateFile:(f)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}` });
+            p.setOptions({ modelComplexity:complexity, smoothLandmarks:true, minDetectionConfidence:0.6, minTrackingConfidence:0.6 });
+            p.onResults(handler);
+            return p;
+        }
+        function closePoses(){
+            [pose1, poseA, poseB].forEach(p => { try { p && p.close && p.close(); } catch(e){} });
+            pose1 = poseA = poseB = null;
+        }
+        function initPose(){
+            closePoses();
+            if(modeKey === '1p'){
+                pose1 = buildPose(1, (r)=>handleResults(1, r, 'full'));
+            } else {
+                // ครึ่งขวาเฟรม -> ผู้เล่น 1 / ครึ่งซ้ายเฟรม -> ผู้เล่น 2 (โมเดล lite เพื่อความลื่น)
+                poseB = buildPose(0, (r)=>handleResults(1, r, 'right'));
+                poseA = buildPose(0, (r)=>handleResults(2, r, 'left'));
+            }
+        }
+
+        // ===== ไปเมนู =====
+        function showMenu(){
+            document.getElementById('menuScreen').classList.remove('hidden');
+            document.getElementById('gameScreen').classList.add('hidden');
+            document.getElementById('leaderboardScreen').classList.add('hidden');
+            stopEverything();
+        }
+        function stopEverything(){
+            isPlaying = false; gameStarted = false;
+            if(timerInterval) clearInterval(timerInterval);
+            if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+            if(cameraLoopId) cancelAnimationFrame(cameraLoopId);
+        }
+        function quitToMenu(){
+            stopEverything();
+            closePoses();
+            showMenu();
+        }
+
+        // ===== เริ่มเกม =====
+        async function startGame(){
+            modeKey = numPlayers === 2 ? '2p' : '1p';
+            document.body.classList.toggle('mode-2p', modeKey==='2p');
+            document.body.classList.toggle('mode-1p', modeKey==='1p');
+
+            gameMode = document.getElementById('gameModeSelect').value;
+            timeLeft = parseInt(document.getElementById('timeSelect').value);
+            totalPlayTime = timeLeft;
+
+            // reset
+            isBonusRound = false; scoreMultiplier = 1;
+            firstPoseReady = false; gameStarted = false;
+            document.getElementById('bonusAlert').classList.add('hidden');
+            document.getElementById('gameArea').classList.remove('shadow-[inset_0_0_100px_rgba(234,179,8,0.5)]');
+
+            activePlayers = (modeKey==='2p') ? [1,2] : [1];
+            activePlayers.forEach(id=>{
+                const P = players[id];
+                P.score=0; P.streak=0; P.touches=0; P.lastHit=0;
+                P.crop = (modeKey==='1p') ? 'full' : (id===1 ? 'right' : 'left');
+                updateStreakChip(id);
+            });
+
+            document.getElementById('loadingHint').innerText = modeKey==='2p'
+                ? 'ผู้เล่น 1 ยืนซ้ายจอ / ผู้เล่น 2 ยืนขวาจอ เตรียมวิ่ง!'
+                : 'กรุณายืนให้เต็มตัวหน้ากล้อง เตรียมวิ่งซ้ายขวา!';
+
+            document.getElementById('menuScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.remove('hidden');
+            document.getElementById('aiLoading').classList.remove('hidden');
+            document.getElementById('countdownOverlay').classList.add('hidden');
+
+            updateHUD();
+            initPose();
+
+            const ok = await startNativeCamera(gameVideo, onFrame);
+            if(!ok){ showMenu(); return; }
+            isPlaying = true;
+        }
+
+        // ===== ลูปต่อเฟรม =====
+        async function onFrame(){
+            if(!isPlaying) return;
+            // ปรับขนาด canvas ให้ตรงวิดีโอ
+            if(gameVideo.videoWidth && gameCanvas.width !== gameVideo.videoWidth){
+                gameCanvas.width = gameVideo.videoWidth;
+                gameCanvas.height = gameVideo.videoHeight;
+            }
+            gameCtx.clearRect(0,0,gameCanvas.width,gameCanvas.height);
+
+            if(modeKey === '1p'){
+                if(pose1) await pose1.send({ image: gameVideo });
+            } else {
+                prepCrops();
+                if(poseB) await poseB.send({ image: rightCrop }); // ผู้เล่น 1
+                if(poseA) await poseA.send({ image: leftCrop  }); // ผู้เล่น 2
+            }
+        }
+
+        // ตัดเฟรมวิดีโอเป็นสองซีก
+        function prepCrops(){
+            const vw = gameVideo.videoWidth, vh = gameVideo.videoHeight;
+            if(!vw) return;
+            const halfW = Math.floor(vw/2);
+            if(leftCrop.width !== halfW){
+                leftCrop.width = halfW;  leftCrop.height = vh;
+                rightCrop.width = halfW; rightCrop.height = vh;
+            }
+            leftCtx.drawImage(gameVideo, 0,0, halfW, vh, 0,0, halfW, vh);
+            rightCtx.drawImage(gameVideo, halfW,0, halfW, vh, 0,0, halfW, vh);
+        }
+
+        // ===== ผลลัพธ์จาก Pose =====
+        function handleResults(pid, results, crop){
+            // ครั้งแรกที่จับร่างได้ -> เริ่มนับถอยหลัง
+            if(!firstPoseReady && results.poseLandmarks){
+                firstPoseReady = true;
+                document.getElementById('aiLoading').classList.add('hidden');
+                startCountdown();
+            }
+            if(!results.poseLandmarks) return;
+
+            drawDots(pid, results.poseLandmarks, crop);
+            if(gameStarted && activePlayers.includes(pid)){
+                checkHandCollisions(pid, results.poseLandmarks, crop);
+            }
+        }
+
+        // แปลงพิกัด landmark (จาก crop) -> พิกัดเต็มเฟรม (0..1) แล้วค่อยคูณ
+        function fullNormX(lm, crop){
+            if(crop === 'left')  return lm.x * 0.5;
+            if(crop === 'right') return 0.5 + lm.x * 0.5;
+            return lm.x;
+        }
+
+        function drawDots(pid, landmarks, crop){
+            gameCtx.fillStyle = (pid === 1) ? '#f97316' : '#8b5cf6';
+            [15,16,19,20].forEach(i=>{
+                const lm = landmarks[i];
+                if(lm && lm.visibility > 0.5){
+                    const fx = fullNormX(lm, crop);
+                    gameCtx.beginPath();
+                    gameCtx.arc(fx*gameCanvas.width, lm.y*gameCanvas.height, 18, 0, 2*Math.PI);
+                    gameCtx.fill();
+                }
+            });
+        }
+
+        // ===== ตรวจการแตะ =====
+        function checkHandCollisions(pid, landmarks, crop){
+            const P = players[pid];
+            const now = Date.now();
+            if(now - P.lastHit < 900) return; // คูลดาวน์รายผู้เล่น
+
+            const hands = [15,16,17,18,19,20,21,22].map(i=>landmarks[i]).filter(l=>l && l.visibility>0.5);
+            if(!hands.length) return;
+
+            const leftBox  = document.getElementById(P.leftId).getBoundingClientRect();
+            const rightBox = document.getElementById(P.rightId).getBoundingClientRect();
+
+            // ชดเชย object-fit: cover
+            const vw = gameVideo.videoWidth, vh = gameVideo.videoHeight;
+            const ww = window.innerWidth, wh = window.innerHeight;
+            const scale = Math.max(ww/vw, wh/vh);
+            const renderedWidth = vw*scale, renderedHeight = vh*scale;
+            const offsetX = (renderedWidth - ww)/2, offsetY = (renderedHeight - wh)/2;
+
+            let touched = null;
+            for(const hand of hands){
+                const fx = fullNormX(hand, crop);
+                const screenX = ((1 - fx) * renderedWidth) - offsetX; // mirror
+                const screenY = (hand.y * renderedHeight) - offsetY;
+
+                if(screenX>=leftBox.left && screenX<=leftBox.right && screenY>=leftBox.top && screenY<=leftBox.bottom){ touched='left'; break; }
+                if(screenX>=rightBox.left && screenX<=rightBox.right && screenY>=rightBox.top && screenY<=rightBox.bottom){ touched='right'; break; }
+            }
+            if(touched) handleAnswerTouch(pid, touched);
+        }
+
+        // ===== สร้างโจทย์ =====
+        function generateQuestion(pid){
+            const P = players[pid];
+            let q = "", ans = 0, mode = gameMode;
+            if(mode === 'mixed'){
+                const modes = ['basic','decimal_fraction','equation_pemdas'];
+                mode = modes[Math.floor(Math.random()*modes.length)];
+            }
+
+            if(mode === 'basic'){
+                if(Math.random() > 0.5){ // คูณ/หาร
+                    ans = Math.floor(Math.random()*12)+2;
+                    let divisor = Math.floor(Math.random()*11)+2;
+                    let dividend = ans*divisor;
+                    q = `${dividend} ÷ ${divisor} = ?`;
+                } else { // บวก/ลบ
+                    ans = Math.floor(Math.random()*50)+10;
+                    let a = Math.floor(Math.random()*20)+10;
+                    let b = Math.floor(Math.random()*15)+5;
+                    let c = (a+b)-ans;
+                    if(c>0) q = `${a} + ${b} - ${c} = ?`;
+                    else    q = `${a} + ${b} + ${Math.abs(c)} = ?`;
+                }
+            } else if(mode === 'decimal_fraction'){
+                ans = Math.floor(Math.random()*9)+1;
+                if(Math.random() > 0.5){ // ทศนิยม
+                    let a = Math.floor(Math.random()*ans);
+                    let b = ans - a - 1;
+                    let dec1 = Math.floor(Math.random()*9)+1;
+                    let dec2 = 10 - dec1;
+                    q = `${a}.${dec1} + ${b}.${dec2} = ?`;
+                } else { // เศษส่วน
+                    let den = Math.floor(Math.random()*4)+2;
+                    let total = ans*den;
+                    q = `1/${den} ของ ${total} = ?`;
+                }
+            } else if(mode === 'equation_pemdas'){
+                ans = Math.floor(Math.random()*9)+2;
+                if(Math.random() > 0.5){ // สมการ
+                    let x = Math.floor(Math.random()*4)+2;
+                    let y = Math.floor(Math.random()*10)+1;
+                    let z = (x*ans)+y;
+                    q = `ถ้า ${x}A + ${y} = ${z} , A = ?`;
+                } else { // ลำดับการคำนวณ
+                    let a = Math.floor(Math.random()*5)+2;
+                    let b = Math.floor(Math.random()*5)+2;
+                    let m = a*b;
+                    if(m > ans) q = `(${a} × ${b}) - ${m-ans} = ?`;
+                    else        q = `(${a} × ${b}) + ${ans-m} = ?`;
+                }
+            }
+
+            // ตัวลวง
+            let wrongAns;
+            do {
+                let offset = Math.floor(Math.random()*5)+1;
+                wrongAns = (Math.random()>0.5) ? ans+offset : ans-offset;
+            } while(wrongAns === ans || wrongAns < 0);
+
+            // สุ่มฝั่ง
+            let leftVal, rightVal;
+            if(Math.random() > 0.5){ leftVal=ans; rightVal=wrongAns; P.correctSide='left'; }
+            else                   { leftVal=wrongAns; rightVal=ans; P.correctSide='right'; }
+
+            const cmdEl = document.getElementById(P.cmdId);
+            cmdEl.innerText = q;
+            document.getElementById(P.leftId).innerText = leftVal;
+            document.getElementById(P.rightId).innerText = rightVal;
+            P.currentAns = ans;
+            P.qStartTime = Date.now();
+        }
+
+        // ===== เมื่อแตะคำตอบ =====
+        function handleAnswerTouch(pid, side){
+            const P = players[pid];
+            P.lastHit = Date.now();
+
+            const box = document.getElementById(side==='left' ? P.leftId : P.rightId);
+            box.classList.add('hit');
+            setTimeout(()=>box.classList.remove('hit'), 200);
+
+            if(side === P.correctSide){
+                // ถูก -> คอมโบเพิ่ม
+                P.streak++;
+                const comboMul = Math.min(4, 1 + Math.floor(P.streak/3)); // x1..x4
+                const elapsed = (Date.now() - P.qStartTime)/1000;
+                const speedBonus = elapsed < 2.5 ? 5 : 0; // โบนัสตอบไว
+                const gained = (10 * comboMul * scoreMultiplier) + speedBonus;
+
+                P.score += gained;
+                P.touches++;
+                updateStreakChip(pid);
+                updateHUD();
+
+                triggerConfetti(scoreMultiplier>1 ? 80 : (P.streak>=3?50:30), pid);
+                beep(P.streak>=3 ? 760 : 600, 'sine', 200);
+
+                const cheers = ["เยี่ยมมาก!","ถูกต้อง!","ไวมาก!","เก่งสุดๆ!"];
+                let say = cheers[Math.floor(Math.random()*cheers.length)];
+                if(P.streak===3) say = "คอมโบ! คูณสอง!";
+                if(P.streak===6) say = "สุดยอด! คอมโบคูณสาม!";
+                speak(say);
+
+                flashScreen('flash-green');
+                generateQuestion(pid);
+            } else {
+                // ผิด -> รีเซ็ตคอมโบ
+                P.score = Math.max(0, P.score - 5);
+                P.streak = 0;
+                updateStreakChip(pid);
+                updateHUD();
+                beep(200, 'sawtooth', 300);
+                speak("ผิด! ลองใหม่");
+                flashScreen('flash-red');
+                generateQuestion(pid);
+            }
+        }
+
+        function updateStreakChip(pid){
+            const P = players[pid];
+            const chip = document.getElementById(P.streakId);
+            if(!chip) return;
+            const comboMul = 1 + Math.floor(P.streak/3);
+            if(P.streak >= 3){
+                chip.innerText = `🔥 คอมโบ x${Math.min(4,comboMul)}`;
+                chip.classList.add('on');
+            } else {
+                chip.classList.remove('on');
+            }
+        }
+
+        // ===== นาฬิกา/เหตุการณ์ =====
+        function gameTick(){
+            timeLeft--;
+            checkEvents();
+            updateHUD();
+            if(timeLeft <= 0) endGame();
+        }
+        function checkEvents(){
+            if(timeLeft === 15 && !isBonusRound){
+                isBonusRound = true;
+                scoreMultiplier = 2;
+                document.getElementById('bonusAlert').classList.remove('hidden');
+                document.getElementById('gameArea').classList.add('shadow-[inset_0_0_100px_rgba(234,179,8,0.5)]');
+                speak("โบนัส! สิบห้าวินาทีสุดท้าย คะแนนคูณสอง!");
+                beep(800, 'square', 500);
+            }
+        }
+
+        function updateHUD(){
+            document.getElementById('timeDisplay').innerText = timeLeft;
+            document.getElementById('p1Score').innerText = players[1].score;
+            document.getElementById('p2Score').innerText = players[2].score;
+            updateTug();
+        }
+        function updateTug(){
+            if(modeKey !== '2p') return;
+            const diff = players[1].score - players[2].score;
+            const clamped = Math.max(-150, Math.min(150, diff));
+            const pct = 50 - (clamped/150)*42; // ผู้เล่น 1 นำ -> ปุ่มเลื่อนไปซ้าย
+            const knot = document.getElementById('tugKnot');
+            knot.style.left = pct + '%';
+            knot.innerText = diff>0 ? '🟠' : diff<0 ? '🟣' : '⚡';
+        }
+
+        function flashScreen(cls){
+            const area = document.getElementById('gameArea');
+            area.classList.add(cls);
+            setTimeout(()=>area.classList.remove(cls), 500);
+        }
+        function triggerConfetti(amount, pid){
+            let originX = 0.5;
+            if(modeKey==='2p') originX = (pid===1) ? 0.25 : 0.75;
+            confetti({ particleCount:amount, spread:70, origin:{ x:originX, y:0.6 }, zIndex:100 });
+        }
+
+        // ===== นับถอยหลัง 3-2-1 =====
+        function startCountdown(){
+            const ov = document.getElementById('countdownOverlay');
+            const el = document.getElementById('countdownNum');
+            ov.classList.remove('hidden');
+            let c = 3;
+            el.innerText = c; speak('สาม'); beep(440,'sine',150);
+            const iv = setInterval(()=>{
+                c--;
+                if(c > 0){ el.innerText = c; speak(c===2?'สอง':'หนึ่ง'); beep(440,'sine',150); }
+                else {
+                    clearInterval(iv);
+                    el.innerText = 'ไป!'; speak('เริ่ม!'); beep(880,'square',300);
+                    setTimeout(()=>{ ov.classList.add('hidden'); beginPlay(); }, 700);
+                }
+            }, 1000);
+        }
+        function beginPlay(){
+            gameStarted = true;
+            activePlayers.forEach(generateQuestion);
+            timerInterval = setInterval(gameTick, 1000);
+        }
+
+        // ===== จบเกม =====
+        async function endGame(){
+            isPlaying = false; gameStarted = false;
+            if(timerInterval) clearInterval(timerInterval);
+            if(stream){ stream.getTracks().forEach(t=>t.stop()); stream=null; }
+            if(cameraLoopId) cancelAnimationFrame(cameraLoopId);
+
+            if(modeKey === '1p'){
+                const P = players[1];
+                speak(`หมดเวลา ได้ ${P.score} คะแนน`);
+                const { value:name } = await Swal.fire({
+                    title:'หมดเวลา!',
+                    html:`<div class="text-left text-lg space-y-2 mt-4 bg-blue-50 p-4 rounded-xl border border-blue-200">
+                        <p class="text-blue-800">⭐️ <b>คะแนนรวม:</b> <span class="text-2xl font-black">${P.score}</span> แต้ม</p>
+                        <p class="text-green-700">🎯 <b>ตอบถูก:</b> ${P.touches} ข้อ</p>
+                        <p class="text-purple-700">⏱ <b>เฉลี่ย:</b> ${(totalPlayTime/(P.touches||1)).toFixed(2)} วิ/ข้อ</p>
+                    </div>`,
+                    input:'text', inputLabel:'ใส่ชื่อนักเรียนเพื่อบันทึกสถิติ',
+                    inputPlaceholder:'ชื่อเล่น หรือ ชื่อจริง',
+                    confirmButtonText:'บันทึกคะแนน', confirmButtonColor:'#3b82f6',
+                    showCancelButton:true, cancelButtonText:'ไม่บันทึก', allowOutsideClick:false
+                });
+                if(name) saveScore(name, P.score);
+                triggerConfetti(150, 1);
+                showLeaderboard();
+            } else {
+                const s1 = players[1].score, s2 = players[2].score;
+                let title, win = 0;
+                if(s1 > s2){ title='🏆 ผู้เล่น 1 ชนะ!'; win=1; }
+                else if(s2 > s1){ title='🏆 ผู้เล่น 2 ชนะ!'; win=2; }
+                else { title='🤝 เสมอกัน!'; win=0; }
+
+                speak(win===0 ? 'เสมอกัน!' : `ผู้เล่น ${win} ชนะ!`);
+                confetti({ particleCount:200, spread:120, origin:{ x: win===2?0.75:(win===1?0.25:0.5), y:0.5 }, zIndex:200 });
+
+                const { isConfirmed } = await Swal.fire({
+                    title,
+                    html:`<div class="flex gap-3 mt-3">
+                        <div class="flex-1 rounded-xl p-3 border-2" style="border-color:#fb923c;background:#fff7ed;">
+                            <p class="font-black" style="color:#c2410c;">ผู้เล่น 1</p>
+                            <p class="text-3xl font-black text-gray-800">${s1}</p>
+                            <p class="text-sm text-gray-500">ถูก ${players[1].touches} ข้อ</p>
+                            <input id="n1" class="swal2-input mt-2" style="margin:8px 0 0;" placeholder="ชื่อผู้เล่น 1">
+                        </div>
+                        <div class="flex-1 rounded-xl p-3 border-2" style="border-color:#a78bfa;background:#f5f3ff;">
+                            <p class="font-black" style="color:#5b21b6;">ผู้เล่น 2</p>
+                            <p class="text-3xl font-black text-gray-800">${s2}</p>
+                            <p class="text-sm text-gray-500">ถูก ${players[2].touches} ข้อ</p>
+                            <input id="n2" class="swal2-input mt-2" style="margin:8px 0 0;" placeholder="ชื่อผู้เล่น 2">
+                        </div>
+                    </div>`,
+                    confirmButtonText:'💾 บันทึก + เล่นอีกครั้ง', confirmButtonColor:'#22c55e',
+                    showCancelButton:true, cancelButtonText:'กลับเมนู',
+                    allowOutsideClick:false,
+                    preConfirm:()=>{
+                        const n1 = document.getElementById('n1').value.trim();
+                        const n2 = document.getElementById('n2').value.trim();
+                        return { n1, n2 };
+                    }
+                }).then(res=>{
+                    if(res.isConfirmed && res.value){
+                        if(res.value.n1) saveScore(res.value.n1, s1);
+                        if(res.value.n2) saveScore(res.value.n2, s2);
+                    }
+                    return res;
+                });
+
+                closePoses();
+                if(isConfirmed){ startGame(); }   // เล่นซ้ำทันที
+                else { showMenu(); }
+            }
+        }
+
+        // ===== ตารางคะแนน =====
+        function saveScore(name, score){
+            let scores = JSON.parse(localStorage.getItem('mathSpeedScores')) || [];
+            scores.push({ name, score, date:new Date().toLocaleDateString('th-TH') });
+            scores.sort((a,b)=>b.score-a.score);
+            scores = scores.slice(0,10);
+            localStorage.setItem('mathSpeedScores', JSON.stringify(scores));
+        }
+        function showLeaderboard(){
+            stopEverything();
+            document.getElementById('menuScreen').classList.add('hidden');
+            document.getElementById('gameScreen').classList.add('hidden');
+            document.getElementById('leaderboardScreen').classList.remove('hidden');
+
+            const tbody = document.getElementById('leaderboardBody');
+            tbody.innerHTML = '';
+            const scores = JSON.parse(localStorage.getItem('mathSpeedScores')) || [];
+            if(!scores.length){
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-4 text-gray-400">ยังไม่มีข้อมูลคะแนน</td></tr>`;
+                return;
+            }
+            scores.forEach((s,i)=>{
+                let badge = i+1;
+                if(i===0) badge='🥇'; if(i===1) badge='🥈'; if(i===2) badge='🥉';
+                tbody.innerHTML += `<tr class="border-b border-gray-200 hover:bg-gray-50 transition">
+                    <td class="py-4 px-2 font-black text-3xl text-center">${badge}</td>
+                    <td class="py-4 font-bold text-gray-700">${s.name}</td>
+                    <td class="py-4 font-black text-blue-600 text-2xl">${s.score}</td>
+                    <td class="py-4 text-sm text-gray-500">${s.date}</td>
+                </tr>`;
+            });
+            triggerConfetti(150, 1);
+        }
+        function closeLeaderboard(){ showMenu(); }
+    </script>
+</body>
+</html>
