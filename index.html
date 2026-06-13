@@ -376,7 +376,33 @@
         const leftCtx   = leftCrop.getContext('2d');
         const rightCtx  = rightCrop.getContext('2d');
 
-        window.onload = initCameraList;
+        window.onload = showWelcome;
+
+        // ===== ป๊อบอัพต้อนรับ + เครดิตผู้พัฒนา =====
+        function showWelcome(){
+            Swal.fire({
+                html: `
+                    <div style="text-align:center; font-family:'Kanit',sans-serif;">
+                        <div style="font-size:3.4rem; line-height:1;">🎮➕🏃‍♂️</div>
+                        <h2 style="font-size:2rem; font-weight:900; color:#ed8936; margin:8px 0 2px; text-shadow:0 2px 6px rgba(0,0,0,0.12);">MATH SPEED</h2>
+                        <p style="font-size:1.1rem; font-weight:600; color:#3b82f6; margin:0 0 14px;">วิ่งแตะซ้าย-ขวา ป.5</p>
+                        <div style="background:#eff6ff; border:2px solid #bfdbfe; border-radius:16px; padding:14px 12px;">
+                            <p style="font-size:1rem; color:#6b7280; margin:0 0 2px;">เกมนี้พัฒนาโดย</p>
+                            <p style="font-size:1.5rem; font-weight:900; color:#1e40af; margin:2px 0;">ครูศิริพงษ์ ธิวรรณ</p>
+                            <p style="font-size:1.05rem; font-weight:600; color:#16a34a; margin:2px 0 0;">ครูโรงเรียนนิคมสร้างตนเอง 3</p>
+                        </div>
+                    </div>
+                `,
+                confirmButtonText: '🚀 เข้าสู่เว็บไซต์',
+                confirmButtonColor: '#22c55e',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                width: 460,
+                background: '#ffffff'
+            }).then(() => {
+                initCameraList();
+            });
+        }
 
         // ===== เลือกจำนวนผู้เล่น =====
         function setPlayers(n){
