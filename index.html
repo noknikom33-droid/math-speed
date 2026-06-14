@@ -792,31 +792,24 @@
             placeAnswerBoxes(pid);
         }
 
-        // ===== ตำแหน่งที่วงคำตอบจะไปโผล่ (เลี่ยงพื้นที่โจทย์/คะแนน) =====
-        // หน่วยเป็น % ของจอ {l:ซ้าย, t:บน}
-        const SLOTS_1P = [
-            {l:5,  t:30}, {l:78, t:30},   // แถวบน  ซ้าย/ขวา
-            {l:5,  t:52}, {l:78, t:52},   // แถวกลาง ซ้าย/ขวา
-            {l:5,  t:72}, {l:78, t:72}    // แถวล่าง ซ้าย/ขวา
-        ];
-        const SLOTS_2P_P1 = [             // ผู้เล่น 1 = ครึ่งซ้ายจอ
-            {l:3,  t:40}, {l:26, t:40},
-            {l:3,  t:72}, {l:26, t:72}
-        ];
-        const SLOTS_2P_P2 = [             // ผู้เล่น 2 = ครึ่งขวาจอ
-            {l:58, t:40}, {l:84, t:40},
-            {l:58, t:72}, {l:84, t:72}
-        ];
-
+        // ===== ตำแหน่งวงคำตอบ: หนึ่งลูกซ้าย อีกลูกขวาเสมอ (ไม่ชนกัน) สุ่มความสูง =====
         function placeAnswerBoxes(pid){
             const P = players[pid];
-            const slots = (modeKey === '1p') ? SLOTS_1P : (pid === 1 ? SLOTS_2P_P1 : SLOTS_2P_P2);
-            // สุ่ม 2 ช่องที่ไม่ซ้ำกัน
-            const a = Math.floor(Math.random()*slots.length);
-            let b;
-            do { b = Math.floor(Math.random()*slots.length); } while(b === a);
-            putBox(document.getElementById(P.leftId),  slots[a]);
-            putBox(document.getElementById(P.rightId), slots[b]);
+            let cols, heights;
+            if(modeKey === '1p'){ cols = [5, 78];  heights = [30, 52, 72]; }      // เต็มจอ
+            else if(pid === 1) { cols = [3, 26];  heights = [40, 72]; }            // ครึ่งซ้าย
+            else               { cols = [58, 84]; heights = [40, 72]; }            // ครึ่งขวา
+
+            // สุ่มว่าลูกไหนไปฝั่งซ้าย/ขวา (แต่อยู่คนละฝั่งเสมอ)
+            const swap = Math.random() < 0.5;
+            const colA = swap ? cols[0] : cols[1];
+            const colB = swap ? cols[1] : cols[0];
+            // สุ่มความสูงของแต่ละลูกอิสระจากกัน (บน-กลาง-ล่าง)
+            const hA = heights[Math.floor(Math.random()*heights.length)];
+            const hB = heights[Math.floor(Math.random()*heights.length)];
+
+            putBox(document.getElementById(P.leftId),  { l: colA, t: hA });
+            putBox(document.getElementById(P.rightId), { l: colB, t: hB });
         }
         function putBox(el, slot){
             el.style.top = slot.t + '%';
