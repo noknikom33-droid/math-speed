@@ -74,7 +74,7 @@
             background: rgba(255, 255, 255, 0.9);
             box-shadow: 0 15px 35px rgba(0,0,0,0.3), inset 0 0 20px rgba(255,255,255,0.8);
             border: 6px solid #fff;
-            transition: transform 0.15s, background-color 0.15s;
+            transition: transform 0.15s, background-color 0.15s, top 0.35s ease, left 0.35s ease;
             position: absolute; bottom: 9%; z-index: 40;
         }
 
@@ -319,7 +319,10 @@
                 <tbody id="leaderboardBody"></tbody>
             </table>
         </div>
-        <button onclick="closeLeaderboard()" class="mt-8 bg-red-500 hover:bg-red-600 text-white text-2xl font-bold py-3 px-10 rounded-full shadow">กลับเมนูหลัก</button>
+        <div class="mt-8 flex flex-wrap gap-4 justify-center">
+            <button onclick="closeLeaderboard()" class="bg-blue-500 hover:bg-blue-600 text-white text-2xl font-bold py-3 px-10 rounded-full shadow">กลับเมนูหลัก</button>
+            <button onclick="clearLeaderboard()" class="bg-red-500 hover:bg-red-600 text-white text-2xl font-bold py-3 px-8 rounded-full shadow">🗑 ล้างตารางคะแนน</button>
+        </div>
     </div>
 
     <!-- ===================== LOGIC ===================== -->
@@ -784,6 +787,42 @@
             document.getElementById(P.rightId).innerText = rightVal;
             P.currentAns = ans;
             P.qStartTime = Date.now();
+
+            // สุ่มตำแหน่งวงคำตอบใหม่ทุกข้อ ทั้งบน-ล่าง ซ้าย-ขวา (ให้เด็กจับทางไม่ได้)
+            placeAnswerBoxes(pid);
+        }
+
+        // ===== ตำแหน่งที่วงคำตอบจะไปโผล่ (เลี่ยงพื้นที่โจทย์/คะแนน) =====
+        // หน่วยเป็น % ของจอ {l:ซ้าย, t:บน}
+        const SLOTS_1P = [
+            {l:5,  t:30}, {l:78, t:30},   // แถวบน  ซ้าย/ขวา
+            {l:5,  t:52}, {l:78, t:52},   // แถวกลาง ซ้าย/ขวา
+            {l:5,  t:72}, {l:78, t:72}    // แถวล่าง ซ้าย/ขวา
+        ];
+        const SLOTS_2P_P1 = [             // ผู้เล่น 1 = ครึ่งซ้ายจอ
+            {l:3,  t:40}, {l:26, t:40},
+            {l:3,  t:72}, {l:26, t:72}
+        ];
+        const SLOTS_2P_P2 = [             // ผู้เล่น 2 = ครึ่งขวาจอ
+            {l:58, t:40}, {l:84, t:40},
+            {l:58, t:72}, {l:84, t:72}
+        ];
+
+        function placeAnswerBoxes(pid){
+            const P = players[pid];
+            const slots = (modeKey === '1p') ? SLOTS_1P : (pid === 1 ? SLOTS_2P_P1 : SLOTS_2P_P2);
+            // สุ่ม 2 ช่องที่ไม่ซ้ำกัน
+            const a = Math.floor(Math.random()*slots.length);
+            let b;
+            do { b = Math.floor(Math.random()*slots.length); } while(b === a);
+            putBox(document.getElementById(P.leftId),  slots[a]);
+            putBox(document.getElementById(P.rightId), slots[b]);
+        }
+        function putBox(el, slot){
+            el.style.top = slot.t + '%';
+            el.style.left = slot.l + '%';
+            el.style.bottom = 'auto';   // ยกเลิกตำแหน่งล่างเดิม
+            el.style.right = 'auto';
         }
 
         // ===== เมื่อแตะคำตอบ =====
@@ -1020,6 +1059,26 @@
             triggerConfetti(150, 1);
         }
         function closeLeaderboard(){ showMenu(); }
+
+        // ล้างตารางคะแนนทั้งหมดในเครื่องนี้ (มีหน้าต่างยืนยันกันพลาด)
+        function clearLeaderboard(){
+            Swal.fire({
+                title: 'ล้างตารางคะแนน?',
+                text: 'คะแนนทั้งหมดที่บันทึกไว้ในเครื่องนี้จะถูกลบถาวร กู้คืนไม่ได้',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'ลบทั้งหมด',
+                confirmButtonColor: '#ef4444',
+                cancelButtonText: 'ยกเลิก',
+                cancelButtonColor: '#6b7280'
+            }).then((r) => {
+                if(r.isConfirmed){
+                    localStorage.removeItem('mathSpeedScores');
+                    showLeaderboard();
+                    Swal.fire({ icon:'success', title:'ล้างเรียบร้อย', timer:1200, showConfirmButton:false });
+                }
+            });
+        }
     </script>
 </body>
 </html>
