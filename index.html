@@ -149,6 +149,16 @@
         }
         .streak-chip.on { opacity:1; }
 
+        /* เส้นแดงแบ่งครึ่งจอ (โชว์เฉพาะโหมด 2 คน) */
+        body.mode-1p #centerDivider { display:none; }
+        body.mode-2p #centerDivider {
+            position:absolute; top:0; left:50%; transform:translateX(-50%);
+            width:8px; height:100%; z-index:25;
+            background:linear-gradient(180deg, #ef4444, #b91c1c);
+            box-shadow:0 0 18px rgba(239,68,68,0.9), 0 0 4px rgba(0,0,0,0.4);
+            border-radius:8px;
+        }
+
         /* ฉากหลังป๊อบอัพ: เบลอนิด ๆ ให้เห็นเมนูจาง ๆ แบบเว็บสมัยใหม่ */
         .swal2-container { backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); }
     </style>
@@ -234,6 +244,9 @@
         <div class="video-container" id="gameArea">
             <video id="gameVideo" autoplay muted playsinline></video>
             <canvas id="gameCanvas" class="output_canvas pointer-events-none z-10"></canvas>
+
+            <!-- เส้นแดงแบ่งครึ่งจอ (เฉพาะโหมด 2 คน) -->
+            <div id="centerDivider"></div>
 
             <!-- เวลา (กลาง/ขวาแล้วแต่โหมด) -->
             <div id="timeBox" class="glass-panel px-6 py-2 rounded-2xl z-20 text-center">
