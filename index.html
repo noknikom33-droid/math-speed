@@ -660,7 +660,7 @@
             }
             if(!results.poseLandmarks) return;
 
-            drawDots(pid, results.poseLandmarks, crop);
+            drawSkeleton(pid, results.poseLandmarks, crop);
             if(gameStarted && activePlayers.includes(pid)){
                 checkHandCollisions(pid, results.poseLandmarks, crop);
             }
@@ -673,17 +673,88 @@
             return lm.x;
         }
 
-        function drawDots(pid, landmarks, crop){
-            gameCtx.fillStyle = (pid === 1) ? '#f97316' : '#8b5cf6';
-            [15,16,19,20].forEach(i=>{
-                const lm = landmarks[i];
-                if(lm && lm.visibility > 0.5){
-                    const fx = fullNormX(lm, crop);
-                    gameCtx.beginPath();
-                    gameCtx.arc(fx*gameCanvas.width, lm.y*gameCanvas.height, 18, 0, 2*Math.PI);
-                    gameCtx.fill();
+        // เส้นเชื่อมข้อต่อร่างกาย (ตามดัชนีจุดของ MediaPipe Pose)
+        const POSE_BONES = [
+            [11,12],                              // ไหล่
+            [11,13],[13,15],                      // แขนซ้าย
+            [12,14],[14,16],                      // แขนขวา
+            [15,17],[15,19],[15,21],[17,19],      // มือ/นิ้ว ซ้าย
+            [16,18],[16,20],[16,22],[18,20],      // มือ/นิ้ว ขวา
+            [11,23],[12,24],[23,24],              // ลำตัว
+            [23,25],[25,27],[27,29],[29,31],[27,31], // ขาซ้าย+เท้า
+            [24,26],[26,28],[28,30],[30,32],[28,32]  // ขาขวา+เท้า
+        ];
+        const JOINTS = [11,12,13,14,15,16,23,24,25,26,27,28,29,30,31,32];
+
+        // วาดโครงกระดูกเรืองแสง (หัว คอ ลำตัว แขน ขา มือ-นิ้ว)
+        function drawSkeleton(pid, lms, crop){
+            const W = gameCanvas.width, H = gameCanvas.height;
+            const color = (pid === 1) ? '#fb923c' : '#a78bfa';  // ส้ม / ม่วง ตามผู้เล่น
+            const pt = (i) => {
+                const l = lms[i];
+                if(!l || l.visibility < 0.4) return null;
+                return { x: fullNormX(l, crop) * W, y: l.y * H };
+            };
+
+            gameCtx.save();
+            gameCtx.lineCap = 'round'; gameCtx.lineJoin = 'round';
+            gameCtx.strokeStyle = color;
+            gameCtx.lineWidth = Math.max(3, W * 0.005);
+            gameCtx.shadowColor = color;
+            gameCtx.shadowBlur = 14;                 // เรืองแสงนีออน
+
+            // วาดกระดูกทั้งหมดในเส้นทางเดียว (ลื่นและเรืองแสงสวย)
+            gameCtx.beginPath();
+            for(const [a,b] of POSE_BONES){
+                const pa = pt(a), pb = pt(b);
+                if(pa && pb){ gameCtx.moveTo(pa.x, pa.y); gameCtx.lineTo(pb.x, pb.y); }
+            }
+            // คอ: จากหัวลงมาที่กึ่งกลางไหล่
+            const sL = pt(11), sR = pt(12), nose = pt(0), earL = pt(7), earR = pt(8);
+            let headC = null, headR = 0;
+            if(earL && earR){
+                headC = { x:(earL.x+earR.x)/2, y:(earL.y+earR.y)/2 };
+                headR = Math.hypot(earL.x-earR.x, earL.y-earR.y) * 0.8;
+            } else if(nose){
+                headC = { x:nose.x, y:nose.y };
+                headR = (sL && sR) ? Math.hypot(sL.x-sR.x, sL.y-sR.y) * 0.32 : W * 0.04;
+            }
+            if(headC && sL && sR){
+                const mid = { x:(sL.x+sR.x)/2, y:(sL.y+sR.y)/2 };
+                gameCtx.moveTo(headC.x, headC.y + headR);
+                gameCtx.lineTo(mid.x, mid.y);
+            }
+            gameCtx.stroke();
+
+            // หัว (วงกลม)
+            if(headC && headR > 0){
+                gameCtx.beginPath();
+                gameCtx.arc(headC.x, headC.y, headR, 0, 2*Math.PI);
+                gameCtx.stroke();
+            }
+
+            // ข้อต่อ (จุดเรืองแสงสีขาว)
+            gameCtx.shadowBlur = 8;
+            gameCtx.fillStyle = '#ffffff';
+            const r = Math.max(4, W * 0.006);
+            for(const i of JOINTS){
+                const p = pt(i);
+                if(p){ gameCtx.beginPath(); gameCtx.arc(p.x, p.y, r, 0, 2*Math.PI); gameCtx.fill(); }
+            }
+
+            // มือ: เน้นใหญ่+สีผู้เล่น (เป็นจุดที่ใช้แตะคำตอบ)
+            gameCtx.fillStyle = color;
+            const rh = Math.max(9, W * 0.012);
+            for(const i of [15,16]){
+                const p = pt(i);
+                if(p){
+                    gameCtx.beginPath(); gameCtx.arc(p.x, p.y, rh, 0, 2*Math.PI); gameCtx.fill();
+                    gameCtx.beginPath(); gameCtx.fillStyle = '#ffffff';
+                    gameCtx.arc(p.x, p.y, rh*0.4, 0, 2*Math.PI); gameCtx.fill();
+                    gameCtx.fillStyle = color;
                 }
-            });
+            }
+            gameCtx.restore();
         }
 
         // ===== ตรวจการแตะ =====
