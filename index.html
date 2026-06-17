@@ -753,12 +753,11 @@
         // ===== เลือกจำนวนผู้เล่น =====
         function setPlayers(n){
             numPlayers = n;
-            const b1 = document.getElementById('btn1p');
-            const b2 = document.getElementById('btn2p');
+            const base = 'flex-1 text-2xl font-black py-4 rounded-2xl border-4 transition ';
             const on  = 'bg-green-500 text-white border-green-700 shadow-[0_6px_0_#166534]';
             const off = 'bg-gray-100 text-gray-500 border-gray-300';
-            if(n===1){ b1.className = b1.className.replace(off,'') ; b1.classList.add(...on.split(' ')); b2.classList.remove(...on.split(' ')); b2.classList.add(...off.split(' ')); }
-            else     { b2.classList.add(...on.split(' ')); b2.classList.remove(...on.split(' ')); b1.classList.remove(...on.split(' ')); b1.classList.add(...off.split(' ')); }
+            document.getElementById('btn1p').className = base + (n===1 ? on : off);
+            document.getElementById('btn2p').className = base + (n===2 ? on : off);
         }
 
         // ===== รายชื่อกล้อง =====
@@ -845,11 +844,11 @@
                 pose1  = buildPose(1, (r)=>handleResults(1, r, 'full'));
                 hands1 = buildHands(1, 2, (r)=>handleHands(1, r, 'full'));   // จับได้ 2 มือ
             } else {
-                // ครึ่งขวาเฟรม -> ผู้เล่น 1 / ครึ่งซ้ายเฟรม -> ผู้เล่น 2 (โมเดล lite เพื่อความลื่น)
+                // ครึ่งขวาเฟรม -> ผู้เล่น 1 / ครึ่งซ้ายเฟรม -> ผู้เล่น 2 (Pose ต้องแยกอินสแตนซ์เพราะจับได้คนเดียว)
                 poseB  = buildPose(0, (r)=>handleResults(1, r, 'right'));
                 poseA  = buildPose(0, (r)=>handleResults(2, r, 'left'));
-                handsB = buildHands(0, 1, (r)=>handleHands(1, r, 'right')); // คนละ 1 มือ เพื่อความเร็ว
-                handsA = buildHands(0, 1, (r)=>handleHands(2, r, 'left'));
+                // Hands ใช้ตัวเดียวสแกนทั้งเฟรม (จับได้หลายมือ) แล้วแยกผู้เล่นตามฝั่ง — กันอินสแตนซ์ชนกัน
+                hands1 = buildHands(0, 4, (r)=>handleHandsRouted(r));
             }
         }
 
@@ -933,8 +932,7 @@
                 prepCrops();
                 if(poseB)  await poseB.send({ image: rightCrop }); // ผู้เล่น 1
                 if(poseA)  await poseA.send({ image: leftCrop  }); // ผู้เล่น 2
-                if(handsB) await handsB.send({ image: rightCrop });
-                if(handsA) await handsA.send({ image: leftCrop  });
+                if(hands1) await hands1.send({ image: gameVideo }); // มือทั้งสองคน สแกนทีเดียว
             }
         }
 
@@ -1139,6 +1137,30 @@
             }
             // เห็นมือแบ (ไม่กำ) -> พร้อมรับการกำครั้งใหม่ (กันกำค้างแล้วกวาดโดนหลายวง)
             if(sawOpen && !sawFist) P.fistArmed = true;
+        }
+
+        // โหมด 2 คน: Hands ตัวเดียวเต็มเฟรม -> แยกว่าเป็นมือของผู้เล่นคนไหนจากตำแหน่งซ้าย/ขวา
+        function handleHandsRouted(results){
+            if(!results || !results.multiHandLandmarks) return;
+            const seen = { 1:{fist:false, open:false}, 2:{fist:false, open:false} };
+
+            for(const lm of results.multiHandLandmarks){
+                const palm = palmPoint(lm);                  // พิกัด 0..1 เต็มเฟรม
+                const pid = (palm.x > 0.5) ? 1 : 2;          // ขวาเฟรม=ผู้เล่น1 / ซ้ายเฟรม=ผู้เล่น2
+                const color = (pid === 1) ? '#fb923c' : '#a78bfa';
+                const fist = isFist(lm);
+                drawHandLandmarks(lm, 'full', color, fist);
+
+                if(gameStarted && activePlayers.includes(pid)){
+                    if(orb.active){
+                        const ob = document.getElementById('powerOrb').getBoundingClientRect();
+                        if(insideBox(screenOfLm(palm, 'full'), ob)) grabOrb(pid);
+                    }
+                    if(fist){ seen[pid].fist = true; trySelectByFist(pid, palm, 'full'); }
+                    else    { seen[pid].open = true; }
+                }
+            }
+            [1,2].forEach(pid=>{ if(seen[pid].open && !seen[pid].fist) players[pid].fistArmed = true; });
         }
 
         // ต้องแบมือก่อน แล้วกำมือในวงคำตอบ จึงนับเป็นการเลือก (1 กำ = 1 ครั้ง)
